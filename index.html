@@ -1242,12 +1242,38 @@
             alert("Pengaturan Berhasil Disimpan ke Cloud!");
         }
 
-        function testFonnteConnection() {
-            const token = document.getElementById("set-fonnte-token").value;
-            if(!token) { alert("Masukkan token Fonnte terlebih dahulu!"); return; }
-            alert("Token Fonnte berhasil disimpan dan siap digunakan!");
-        }
+        async function testFonnteConnection() {
+    const token = document.getElementById("set-fonnte-token").value;
+    if(!token) { 
+        alert("Masukkan token Fonnte terlebih dahulu!"); 
+        return; 
+    }
 
+    // Tampilkan informasi bahwa pengecekan sedang berjalan
+    alert("Menghubungkan ke server Fonnte...");
+
+    try {
+        // Menggunakan endpoint validasi/device dari Fonnte untuk tes token
+        const response = await fetch('https://api.fonnte.com/device', {
+            method: 'POST',
+            headers: {
+                'Authorization': token
+            }
+        });
+
+        const result = await response.json();
+
+        // Cek apakah token valid berdasarkan balasan dari server Fonnte
+        if (result.status || result.device) {
+            alert("Berhasil! Token Fonnte terhubung dan aktif.");
+        } else {
+            alert("Gagal: Token Fonnte tidak valid atau kadaluarsa.");
+        }
+    } catch (error) {
+        console.error("Error:", error);
+        alert("Terjadi kesalahan jaringan saat mencoba menghubungi Fonnte.");
+    }
+}
         /* AKSI MODAL & EDIT PELANGGAN */
         function openCustomerModal() {
             document.getElementById("modal-cust-title").innerText = "Tambah Pelanggan Baru";
@@ -1555,24 +1581,57 @@
             }
         }
 
-        /* KIRIM WA & BULK APPROVAL */
-        function sendSingleWhatsApp(id) {
-            const c = db.customers.find(item => item.id === id);
-            if(c) {
-                const pkg = db.packages.find(p => p.name === c.package);
-                const total = pkg ? pkg.price : 0;
+        async function sendSingleWhatsApp(id) {
+    const c = db.customers.find(item => item.id === id);
+    if(c) {
+        const pkg = db.packages.find(p => p.name === c.package);
+        const total = pkg ? pkg.price : 0;
+        
+        let msg = (db.settings.waTemplate || "")
+            .replace(/{nama}/g, c.name)
+            .replace(/{paket}/g, c.package)
+            .replace(/{bulan}/g, formatMonthName(currentBillingMonth))
+            .replace(/{total}/g, total.toLocaleString('id-ID'))
+            .replace(/{tgl_tempo}/g, c.dueDate)
+            .replace(/{perusahaan}/g, db.settings.companyName);
 
-                let msg = (db.settings.waTemplate || "")
-                    .replace(/{nama}/g, c.name)
-                    .replace(/{paket}/g, c.package)
-                    .replace(/{bulan}/g, formatMonthName(currentBillingMonth))
-                    .replace(/{total}/g, total.toLocaleString('id-ID'))
-                    .replace(/{tgl_tempo}/g, c.dueDay)
-                    .replace(/{perusahaan}/g, db.settings.companyName);
-
-                window.open(`https://api.whatsapp.com/send?phone=${c.phone}&text=${encodeURIComponent(msg)}`, '_blank');
-            }
+        // Ambil token Fonnte dari input pengaturan aplikasi
+        const token = document.getElementById("set-fonnte-token") ? document.getElementById("set-fonnte-token").value : "";
+        if (!token) {
+            alert("Token Fonnte belum diatur! Masukkan token di menu pengaturan.");
+            return;
         }
+
+        // Siapkan data untuk dikirim ke API Fonnte
+        const bodyData = new URLSearchParams();
+        bodyData.append('target', c.phone);
+        bodyData.append('message', msg);
+
+        try {
+            // Tampilkan indikator proses sebentar
+            console.log("Mengirim pesan otomatis ke " + c.name + "...");
+
+            const response = await fetch('https://api.fonnte.com/send', {
+                method: 'POST',
+                headers: {
+                    'Authorization': token
+                },
+                body: bodyData
+            });
+
+            const result = await response.json();
+
+            if (result.status) {
+                alert("Pesan tagihan berhasil dikirim otomatis ke " + c.name + "!");
+            } else {
+                alert("Gagal kirim: " + (result.reason || "Periksa nomor HP atau token Fonnte."));
+            }
+        } catch (error) {
+            console.error("Error:", error);
+            alert("Terjadi kesalahan jaringan saat mengirim pesan Fonnte.");
+        }
+    }
+}
 
         function sendWelcomeWhatsApp(id) {
             const c = db.customers.find(item => item.id === id);
